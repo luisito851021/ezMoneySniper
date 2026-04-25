@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import pandas as pd
+from sqlalchemy import text
 
 IS_CLOUD = os.getenv("IS_CLOUD", "false").lower() == "true"
 
@@ -18,7 +19,7 @@ def get_engine():
 
 def query(sql: str) -> pd.DataFrame:
     with get_engine().connect() as conn:
-        return pd.read_sql(sql, conn)
+        return pd.read_sql(text(sql), conn)
 
 FUND_NAMES = {
     "00988A": "統一全球創新",
