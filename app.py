@@ -242,7 +242,7 @@ with st.sidebar:
     st.header("🔧 篩選條件")
     fund_id = st.selectbox(
         "選擇基金",
-        options=list(FUND_NAMES.keys()),
+        options=["00981A", "00988A", "00992A"],
         format_func=lambda x: f"{x} {FUND_NAMES[x]}",
     )
 
@@ -256,7 +256,7 @@ with st.sidebar:
     st.caption("資料來源：Supabase" if IS_CLOUD else f"資料庫：{os.getenv('SQLITE_PATH', r'C:\ActiveFundRadar\etf.db')}")
 
 # ── Tab 佈局 ──────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📊 當日異動", "📋 完整持倉", "📈 歷史紀錄"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 當日異動", "🏆 前十大持股", "📋 完整持倉", "📈 歷史紀錄"])
 
 # ════════════════════════════════════════════════
 # Tab 1：當日異動
@@ -309,9 +309,31 @@ with tab1:
                 st.dataframe(hist, use_container_width=True, hide_index=True)
 
 # ════════════════════════════════════════════════
-# Tab 2：完整持倉快照
+# Tab 2：前十大持股
 # ════════════════════════════════════════════════
 with tab2:
+    st.subheader(f"{selected_date}　{fund_id} {FUND_NAMES[fund_id]}　前十大持股")
+
+    snap_date_df2 = query(f"""
+        SELECT DISTINCT date FROM holdings
+        WHERE fund_id = '{fund_id}' AND date <= '{selected_date}'
+        ORDER BY date DESC LIMIT 1
+    """)
+
+    if snap_date_df2.empty:
+        st.info("此日期前無持倉快照資料")
+    else:
+        snap_date2 = snap_date_df2.iloc[0]["date"]
+        if snap_date2 != selected_date:
+            st.caption(f"（holdings 最近資料為 {snap_date2}）")
+
+        df_top10 = get_holdings_snapshot(fund_id, snap_date2).head(10).reset_index(drop=True)
+        st.markdown(render_snapshot_html(df_top10, fund_id), unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════
+# Tab 3：完整持倉快照
+# ════════════════════════════════════════════════
+with tab3:
     st.subheader(f"{selected_date}　{fund_id} {FUND_NAMES[fund_id]}　完整持倉")
 
     snap_date_df = query(f"""
@@ -338,17 +360,11 @@ with tab2:
         with col_b:
             st.metric("持股總數", f"{len(df_snap)} 檔")
             st.metric("權重加總", f"{df_snap['權重'].sum():.2f}%")
-            top5 = df_snap.head(5)
-            st.markdown("**前五大持股**")
-            for _, row in top5.iterrows():
-                flag = get_flag(row["代號"]) if fund_id == "00988A" else ""
-                flag_str = f"{flag} " if flag else ""
-                st.markdown(f"- {row['代號']} {flag_str}{row['名稱']}　{row['權重']}%")
 
 # ════════════════════════════════════════════════
-# Tab 3：歷史紀錄
+# Tab 4：歷史紀錄
 # ════════════════════════════════════════════════
-with tab3:
+with tab4:
     st.subheader(f"{fund_id} {FUND_NAMES[fund_id]}　歷史異動紀錄")
 
     col_left, col_right = st.columns([1, 3])
