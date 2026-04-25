@@ -253,7 +253,7 @@ with st.sidebar:
 
     selected_date = st.selectbox("選擇日期", options=available_dates)
     st.divider()
-    st.caption(f"資料庫路徑：{DB_PATH}")
+    st.caption("資料來源：Supabase" if IS_CLOUD else f"資料庫：{os.getenv('SQLITE_PATH', r'C:\ActiveFundRadar\etf.db')}")
 
 # ── Tab 佈局 ──────────────────────────────────────
 tab1, tab2, tab3 = st.tabs(["📊 當日異動", "📋 完整持倉", "📈 歷史紀錄"])
