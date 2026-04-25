@@ -62,9 +62,9 @@ def get_changes(fund_id: str, target_date: str) -> pd.DataFrame:
             ticker                               AS 代號,
             name                                 AS 名稱,
             action                               AS 動作,
-            ROUND(weight_today * 100, 2)         AS 今日權重,
-            ROUND(weight_yest  * 100, 2)         AS 昨日權重,
-            ROUND(delta        * 100, 2)         AS 權重變化,
+            ROUND(CAST(weight_today * 100 AS NUMERIC), 2)         AS 今日權重,
+            ROUND(CAST(weight_yest  * 100 AS NUMERIC), 2)         AS 昨日權重,
+            ROUND(CAST(delta        * 100 AS NUMERIC), 2)         AS 權重變化,
             delta_shares                         AS 股數變化,
             shares_yest                          AS 昨日股數,
             shares_today                         AS 今日股數
@@ -85,9 +85,9 @@ def get_history(fund_id: str, ticker: str) -> pd.DataFrame:
         SELECT
             date                                 AS 日期,
             action                               AS 動作,
-            ROUND(weight_yest  * 100, 2)         AS 昨日權重,
-            ROUND(weight_today * 100, 2)         AS 今日權重,
-            ROUND(delta        * 100, 2)         AS 權重變化,
+            ROUND(CAST(weight_yest  * 100 AS NUMERIC), 2)         AS 昨日權重,
+            ROUND(CAST(weight_today * 100 AS NUMERIC), 2)         AS 今日權重,
+            ROUND(CAST(delta        * 100 AS NUMERIC), 2)         AS 權重變化,
             delta_shares                         AS 股數變化
         FROM daily_changes
         WHERE fund_id = '{fund_id}' AND ticker = '{ticker}'
@@ -101,8 +101,8 @@ def get_all_history(fund_id: str, n_days: int = 30) -> pd.DataFrame:
             ticker                               AS 代號,
             name                                 AS 名稱,
             action                               AS 動作,
-            ROUND(weight_today * 100, 2)         AS 今日權重,
-            ROUND(delta        * 100, 2)         AS 權重變化,
+            ROUND(CAST(weight_today * 100 AS NUMERIC), 2)         AS 今日權重,
+            ROUND(CAST(delta        * 100 AS NUMERIC), 2)         AS 權重變化,
             delta_shares                         AS 股數變化
         FROM daily_changes
         WHERE fund_id = '{fund_id}'
@@ -115,7 +115,7 @@ def get_holdings_snapshot(fund_id: str, target_date: str) -> pd.DataFrame:
         SELECT
             ticker                               AS 代號,
             name                                 AS 名稱,
-            ROUND(weight * 100, 2)               AS 權重,
+            ROUND(CAST(weight * 100 AS NUMERIC), 2)               AS 權重,
             shares                               AS 股數
         FROM holdings
         WHERE fund_id = '{fund_id}' AND date = '{target_date}'
