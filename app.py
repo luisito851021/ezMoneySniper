@@ -327,7 +327,16 @@ with tab2:
         if snap_date2 != selected_date:
             st.caption(f"（holdings 最近資料為 {snap_date2}）")
 
-        df_top10 = get_holdings_snapshot(fund_id, snap_date2).head(10).reset_index(drop=True)
+        df_all = get_holdings_snapshot(fund_id, snap_date2)
+        df_top10 = df_all.head(10).reset_index(drop=True)
+        top10_weight = df_top10["權重"].sum()
+        total_weight = df_all["權重"].sum()
+        concentration = (top10_weight / total_weight * 100) if total_weight > 0 else 0
+
+        col_t1, col_t2 = st.columns(2)
+        col_t1.metric("前十大權重合計", f"{top10_weight:.2f}%")
+        col_t2.metric("佔基金總權重", f"{concentration:.1f}%")
+
         st.markdown(render_snapshot_html(df_top10, fund_id), unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════
