@@ -360,15 +360,14 @@ with tab3:
 
         df_snap = get_holdings_snapshot(fund_id, snap_date)
 
-        col_a, col_b = st.columns([2, 1])
-        with col_a:
-            st.markdown(
-                render_snapshot_html(df_snap, fund_id),
-                unsafe_allow_html=True,
-            )
-        with col_b:
-            st.metric("持股總數", f"{len(df_snap)} 檔")
-            st.metric("權重加總", f"{df_snap['權重'].sum():.2f}%")
+        col_s1, col_s2 = st.columns(2)
+        col_s1.metric("持股總數", f"{len(df_snap)} 檔")
+        col_s2.metric("權重加總", f"{df_snap['權重'].sum():.2f}%")
+
+        st.markdown(
+            render_snapshot_html(df_snap, fund_id),
+            unsafe_allow_html=True,
+        )
 
 # ════════════════════════════════════════════════
 # Tab 4：歷史紀錄
