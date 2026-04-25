@@ -1,11 +1,24 @@
 import os
 import streamlit as st
-import sqlite3
 import pandas as pd
-from datetime import date
 
-# ── 設定 ──────────────────────────────────────────
-DB_PATH = os.getenv("SQLITE_PATH", r"C:\ActiveFundRadar\etf.db")
+IS_CLOUD = os.getenv("IS_CLOUD", "false").lower() == "true"
+
+# ── DB 連線 ───────────────────────────────────────
+@st.cache_resource
+def get_engine():
+    if IS_CLOUD:
+        from sqlalchemy import create_engine
+        return create_engine(os.environ["SUPABASE_URL"], pool_pre_ping=True)
+    else:
+        import sqlite3
+        from sqlalchemy import create_engine
+        db_path = os.getenv("SQLITE_PATH", r"C:\ActiveFundRadar\etf.db")
+        return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+
+def query(sql: str) -> pd.DataFrame:
+    with get_engine().connect() as conn:
+        return pd.read_sql(sql, conn)
 
 FUND_NAMES = {
     "00988A": "統一全球創新",
@@ -33,14 +46,6 @@ FLAG_MAP = {
 def get_flag(ticker: str) -> str:
     suffix = ticker.strip().split()[-1].upper()
     return FLAG_MAP.get(suffix, "")
-
-# ── DB 工具 ───────────────────────────────────────
-@st.cache_resource
-def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
-
-def query(sql: str) -> pd.DataFrame:
-    return pd.read_sql(sql, get_conn())
 
 def get_available_dates(fund_id: str) -> list[str]:
     df = query(f"""
