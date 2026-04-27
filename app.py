@@ -179,7 +179,7 @@ def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: st
         + "<table class='etf-table'>"
         + "<thead><tr>"
         + f"<th>代號</th><th>名稱</th><th>股數變化({unit})</th>"
-        + f"<th>權重變化</th><th>今日權重</th><th>今日股數({unit})</th>"
+        + f"<th>權重變化</th><th>目前權重</th><th>目前股數({unit})</th>"
         + "</tr></thead>"
         + f"<tbody>{rows}</tbody></table>"
     )
