@@ -169,9 +169,9 @@ def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: st
             f"<td>{row['代號']}</td>"
             f"<td>{flag_str}{row['名稱']}</td>"
             f"<td class='{cls}'>{delta_s:+,}</td>"
+            f"<td>{today_s:,}</td>"
             f"<td class='{cls}'>{d:+.2f}%</td>"
             f"<td>{row['今日權重']:.2f}%</td>"
-            f"<td>{today_s:,}</td>"
             f"</tr>"
         )
     return (
@@ -179,7 +179,7 @@ def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: st
         + "<table class='etf-table'>"
         + "<thead><tr>"
         + f"<th>代號</th><th>名稱</th><th>股數變化({unit})</th>"
-        + f"<th>權重變化</th><th>目前權重</th><th>目前股數({unit})</th>"
+        + f"<th>目前股數({unit})</th><th>權重變化</th><th>目前權重</th>"
         + "</tr></thead>"
         + f"<tbody>{rows}</tbody></table>"
     )
