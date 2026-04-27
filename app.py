@@ -77,7 +77,8 @@ def get_changes(fund_id: str, target_date: str) -> pd.DataFrame:
                 WHEN '加碼' THEN 3
                 WHEN '減碼' THEN 4
             END,
-            ABS(delta) DESC
+            ABS(delta_shares) DESC,
+            weight_today DESC
     """)
 
 def get_history(fund_id: str, ticker: str) -> pd.DataFrame:
@@ -151,30 +152,34 @@ TABLE_STYLE = """
 """
 
 def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: str) -> str:
+    is_tw = fund_id in ("00981A", "00992A")
+    unit = "張" if is_tw else "股"
     rows = ""
     for i, row in display.iterrows():
         flag = get_flag(row["代號"]) if fund_id == "00988A" else ""
         flag_str = f"{flag} " if flag else ""
         d = delta_raw.iloc[i]
         cls = "pos" if d > 0 else ("neg" if d < 0 else "")
+        raw_delta_s = int(row["股數變化"])
+        raw_today_s = int(row["今日股數"])
+        delta_s = raw_delta_s // 1000 if is_tw else raw_delta_s
+        today_s = raw_today_s // 1000 if is_tw else raw_today_s
         rows += (
             f"<tr>"
             f"<td>{row['代號']}</td>"
             f"<td>{flag_str}{row['名稱']}</td>"
-            f"<td>{row['今日權重']:.2f}%</td>"
-            f"<td>{row['昨日權重']:.2f}%</td>"
+            f"<td class='{cls}'>{delta_s:+,}</td>"
             f"<td class='{cls}'>{d:+.2f}%</td>"
-            f"<td>{int(row['股數變化']):,}</td>"
-            f"<td>{int(row['昨日股數']):,}</td>"
-            f"<td>{int(row['今日股數']):,}</td>"
+            f"<td>{row['今日權重']:.2f}%</td>"
+            f"<td>{today_s:,}</td>"
             f"</tr>"
         )
     return (
         TABLE_STYLE
         + "<table class='etf-table'>"
         + "<thead><tr>"
-        + "<th>代號</th><th>名稱</th><th>今日權重</th><th>昨日權重</th>"
-        + "<th>權重變化</th><th>股數變化</th><th>昨日股數</th><th>今日股數</th>"
+        + f"<th>代號</th><th>名稱</th><th>股數變化({unit})</th>"
+        + f"<th>權重變化</th><th>今日權重</th><th>今日股數({unit})</th>"
         + "</tr></thead>"
         + f"<tbody>{rows}</tbody></table>"
     )
