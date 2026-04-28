@@ -1,7 +1,10 @@
 import os
+import re
+import requests
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
+from datetime import datetime
 
 IS_CLOUD = os.getenv("IS_CLOUD", "false").lower() == "true"
 
@@ -232,6 +235,96 @@ def render_history_html(df: pd.DataFrame, fund_id: str) -> str:
         + f"<tbody>{rows}</tbody></table>"
     )
 
+# ── 市場資料：收盤價 + 淨值 + 折溢價 ────────────────
+# ezmoney fund code（統一投信旗下，00992A 為群益，另行處理）
+_EZMONEY_CODE = {"00988A": "61YTW", "00981A": "49YTW"}
+
+@st.cache_data(ttl=1800)
+def get_etf_market_data(fund_id: str, date_str: str) -> dict:
+    """
+    收盤價：FinMind TaiwanStockPrice（指定日期）
+    淨值  ：ezmoney 頁面初始 HTML（最新公布值）
+    折溢價：兩者相除計算
+    回傳 dict，缺資料的欄位不存在，不回傳 None。
+    """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    result = {}
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    kw = {"headers": {"User-Agent": ua}, "timeout": 10, "verify": False}
+
+    # 1. 收盤價：FinMind（往前找最近 7 天取最新交易日，date_str 固定為今日）
+    try:
+        from datetime import timedelta
+        query_start = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data"
+            f"?dataset=TaiwanStockPrice&data_id={fund_id}"
+            f"&start_date={query_start}&end_date={date_str}",
+            **kw,
+        )
+        if r.ok:
+            rows = r.json().get("data", [])
+            if rows:
+                latest = max(rows, key=lambda x: x["date"])
+                result["price"] = float(latest["close"])
+    except Exception:
+        pass
+
+    # 2. 淨值：ezmoney 初始 HTML（00988A / 00981A）
+    fund_code = _EZMONEY_CODE.get(fund_id)
+    if fund_code:
+        try:
+            r2 = requests.get(
+                f"https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode={fund_code}",
+                **kw,
+            )
+            if r2.ok:
+                r2.encoding = "utf-8"
+                pat = (
+                    rf'class="time"[^>]*>(\d{{2}}/\d{{2}})</td>'
+                    rf'\s+<td[^>]*>.*?fundCode={fund_code}.*?</td>'
+                    rf'\s+<td class="num_ETF">([\d.]+)</td>'
+                )
+                m = re.search(pat, r2.text, re.DOTALL)
+                if m:
+                    result["nav"] = float(m.group(2))
+                    result["nav_date"] = m.group(1)   # e.g. "04/28"
+        except Exception:
+            pass
+
+    # 2b. 淨值：群益 capitalfund.com.tw（00992A 專用，Angular SSR）
+    elif fund_id == "00992A":
+        try:
+            r3 = requests.get(
+                "https://www.capitalfund.com.tw/etf/product/detail/500/basic",
+                **kw,
+            )
+            if r3.ok:
+                r3.encoding = "utf-8"
+                # 第一個 main-info-item-value 為最新預估淨值
+                m_val = re.search(r'class="main-info-item-value">([\d.]+)<', r3.text)
+                if m_val:
+                    result["nav"] = float(m_val.group(1))
+                    # 日期緊接在值後面，格式 2026/04/28
+                    m_date = re.search(
+                        r'class="main-info-item-value">[\d.]+.*?(\d{4}/\d{2}/\d{2})',
+                        r3.text,
+                        re.DOTALL,
+                    )
+                    if m_date:
+                        result["nav_date"] = m_date.group(1)[5:]  # "MM/DD"
+        except Exception:
+            pass
+
+    # 3. 折溢價
+    if "price" in result and "nav" in result and result["nav"] > 0:
+        result["premium"] = round((result["price"] / result["nav"] - 1) * 100, 2)
+
+    return result
+
+
 # ── 頁面設定 ──────────────────────────────────────
 st.set_page_config(
     page_title="ezMoneySniper",
@@ -259,6 +352,26 @@ with st.sidebar:
     selected_date = st.selectbox("選擇日期", options=available_dates)
     st.divider()
     st.caption("資料來源：Supabase" if IS_CLOUD else f"資料庫：{os.getenv('SQLITE_PATH', r'C:\ActiveFundRadar\etf.db')}")
+
+# ── 收盤價 / 淨值 / 折溢價（永遠顯示最新行情，不跟 selected_date）────────
+mkt = get_etf_market_data(fund_id, datetime.now().strftime("%Y-%m-%d"))
+c1, c2, c3 = st.columns(3)
+c1.metric("收盤價", f"NT$ {mkt['price']:.2f}" if "price" in mkt else "－")
+if "nav" in mkt:
+    nav_label = f"淨值 (NAV)　{mkt.get('nav_date', '')}"
+    c2.metric(nav_label, f"NT$ {mkt['nav']:.2f}")
+else:
+    c2.metric("淨值 (NAV)", "－")
+if "premium" in mkt:
+    prem = mkt["premium"]
+    c3.metric(
+        "折溢價",
+        f"{prem:+.2f}%",
+        delta="溢價" if prem > 0 else ("折價" if prem < 0 else "平價"),
+        delta_color="normal" if prem > 0 else ("inverse" if prem < 0 else "off"),
+    )
+else:
+    c3.metric("折溢價", "－")
 
 # ── Tab 佈局 ──────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(["📊 當日異動", "🏆 前十大持股", "📋 完整持倉", "📈 歷史紀錄"])
