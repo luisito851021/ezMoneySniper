@@ -28,6 +28,7 @@ FUND_NAMES = {
     "00988A": "統一全球創新",
     "00981A": "統一台股增長",
     "00992A": "群益台灣科技創新",
+    "00403A": "統一台股升級50",
 }
 
 ACTION_COLOR = {
@@ -155,7 +156,7 @@ TABLE_STYLE = """
 """
 
 def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: str) -> str:
-    is_tw = fund_id in ("00981A", "00992A")
+    is_tw = fund_id in ("00981A", "00992A", "00403A")
     unit = "張" if is_tw else "股"
     rows = ""
     for i, row in display.iterrows():
@@ -237,7 +238,7 @@ def render_history_html(df: pd.DataFrame, fund_id: str) -> str:
 
 # ── 市場資料：收盤價 + 淨值 + 折溢價 ────────────────
 # ezmoney fund code（統一投信旗下，00992A 為群益，另行處理）
-_EZMONEY_CODE = {"00988A": "61YTW", "00981A": "49YTW"}
+_EZMONEY_CODE = {"00988A": "61YTW", "00981A": "49YTW", "00403A": "63YTW"}
 
 @st.cache_data(ttl=1800)
 def get_etf_market_data(fund_id: str, date_str: str) -> dict:
@@ -340,7 +341,7 @@ with st.sidebar:
     st.header("🔧 篩選條件")
     fund_id = st.selectbox(
         "選擇基金",
-        options=["00981A", "00988A", "00992A"],
+        options=["00981A", "00988A", "00992A", "00403A"],
         format_func=lambda x: f"{x} {FUND_NAMES[x]}",
     )
 
