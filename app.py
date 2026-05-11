@@ -48,9 +48,28 @@ FLAG_MAP = {
     "LN": "🇬🇧",
 }
 
+_MARKET_SUFFIX = {
+    "US": "",
+    "JP": ".T",
+    "KS": ".KS",
+    "GY": ".DE",
+    "HK": ".HK",
+    "FP": ".PA",
+    "LN": ".L",
+    "TW": ".TW",
+}
+
 def get_flag(ticker: str) -> str:
     suffix = ticker.strip().split()[-1].upper()
     return FLAG_MAP.get(suffix, "")
+
+def to_yahoo_ticker(bloomberg_ticker: str) -> str:
+    parts = bloomberg_ticker.strip().split()
+    base = parts[0]
+    suffix = parts[1].upper() if len(parts) > 1 else ""
+    if not suffix and base.isdigit():
+        return base + ".TW"
+    return base + _MARKET_SUFFIX.get(suffix, "")
 
 def get_available_dates(fund_id: str) -> list[str]:
     df = query(f"""
@@ -337,6 +356,41 @@ def get_etf_market_data(fund_id: str, date_str: str) -> dict:
     return result
 
 
+@st.cache_data(ttl=1800)
+def get_yf_price_map(tickers: tuple) -> dict:
+    """Yahoo Finance 批次抓漲幅%（00988A 用），回傳 {bloomberg_ticker: 漲幅%}，cache 30 分鐘"""
+    if not tickers:
+        return {}
+    yahoo_to_bb = {}
+    for bt in tickers:
+        yt = to_yahoo_ticker(bt)
+        if yt:
+            yahoo_to_bb[yt] = bt
+    if not yahoo_to_bb:
+        return {}
+    try:
+        import yfinance as yf
+        yt_list = list(yahoo_to_bb.keys())
+        raw = yf.download(yt_list, period="5d", auto_adjust=True, progress=False)
+        if isinstance(raw.columns, pd.MultiIndex):
+            close = raw["Close"]
+        else:
+            close = raw[["Close"]].rename(columns={"Close": yt_list[0]})
+        result = {}
+        for yt, bt in yahoo_to_bb.items():
+            if yt not in close.columns:
+                continue
+            series = close[yt].dropna()
+            if len(series) < 2:
+                continue
+            prev, curr = series.iloc[-2], series.iloc[-1]
+            if prev > 0:
+                result[bt] = round(float((curr - prev) / prev * 100), 2)
+        return result
+    except Exception:
+        return {}
+
+
 @st.cache_data(ttl=300)
 def get_tw_price_map(tickers: tuple) -> dict:
     """TWSE 即時 API 批次抓漲幅%（上市+上櫃一次送），回傳 {ticker: 漲幅%}，cache 5 分鐘"""
@@ -492,8 +546,11 @@ with tab2:
             st.caption(f"（holdings 最近資料為 {snap_date2}）")
 
         df_all = get_holdings_snapshot(fund_id, snap_date2)
-        price_map = get_tw_price_map(tuple(df_all["代號"].tolist())) if fund_id != "00988A" else None
         df_top10 = df_all.head(10).reset_index(drop=True)
+        if fund_id == "00988A":
+            price_map = get_yf_price_map(tuple(df_top10["代號"].tolist()))
+        else:
+            price_map = get_tw_price_map(tuple(df_all["代號"].tolist()))
         top10_weight = df_top10["權重"].sum()
         total_weight = df_all["權重"].sum()
         concentration = (top10_weight / total_weight * 100) if total_weight > 0 else 0
@@ -524,7 +581,10 @@ with tab3:
             st.caption(f"（holdings 最近資料為 {snap_date}）")
 
         df_snap = get_holdings_snapshot(fund_id, snap_date)
-        price_map = get_tw_price_map(tuple(df_snap["代號"].tolist())) if fund_id != "00988A" else None
+        if fund_id == "00988A":
+            price_map = get_yf_price_map(tuple(df_snap["代號"].tolist()))
+        else:
+            price_map = get_tw_price_map(tuple(df_snap["代號"].tolist()))
 
         col_s1, col_s2 = st.columns(2)
         col_s1.metric("持股總數", f"{len(df_snap)} 檔")
