@@ -337,64 +337,38 @@ def get_etf_market_data(fund_id: str, date_str: str) -> dict:
     return result
 
 
-@st.cache_data(ttl=1800)
-def get_tw_price_map() -> dict:
-    """一次抓 TWSE + TPEX 所有股票當日漲幅%，回傳 {ticker: 漲幅%}"""
+@st.cache_data(ttl=300)
+def get_tw_price_map(tickers: tuple) -> dict:
+    """TWSE 即時 API 批次抓漲幅%（上市+上櫃一次送），回傳 {ticker: 漲幅%}，cache 5 分鐘"""
+    if not tickers:
+        return {}
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    kw = {"headers": {"User-Agent": "Mozilla/5.0"}, "timeout": 10, "verify": False}
-    result = {}
-
-    # TWSE 上市
+    ex_ch = "|".join(
+        [f"tse_{t}.tw" for t in tickers] + [f"otc_{t}.tw" for t in tickers]
+    )
     try:
         r = requests.get(
-            "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=ALLBUT0999",
-            **kw,
+            f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+            verify=False,
         )
-        if r.ok:
-            for table in r.json().get("tables", []):
-                fields = table.get("fields", [])
-                if "證券代號" not in fields or "收盤價" not in fields:
-                    continue
-                fi = {f: i for i, f in enumerate(fields)}
-                for row in table.get("data", []):
-                    try:
-                        ticker = row[fi["證券代號"]].strip()
-                        close  = float(row[fi["收盤價"]].replace(",", ""))
-                        sign   = row[fi["漲跌(+/-)"]].strip()
-                        diff   = float(row[fi["漲跌價差"]].replace(",", ""))
-                        if sign == "-":
-                            diff = -diff
-                        prev = close - diff
-                        if prev > 0:
-                            result[ticker] = round(diff / prev * 100, 2)
-                    except Exception:
-                        continue
+        if not r.ok:
+            return {}
+        result = {}
+        for item in r.json().get("msgArray", []):
+            ticker = item.get("c", "")
+            z = item.get("z", "-")
+            y = item.get("y", "-")
+            try:
+                pct = round((float(z) - float(y)) / float(y) * 100, 2)
+                result[ticker] = pct
+            except Exception:
+                continue
+        return result
     except Exception:
-        pass
-
-    # TPEX 上櫃
-    try:
-        r2 = requests.get(
-            "https://www.tpex.org.tw/web/stock/aftertrading/otc_quotes_no1430/"
-            "stk_wn1430_result.php?l=zh-tw&o=json&se=EW",
-            **kw,
-        )
-        if r2.ok:
-            for row in r2.json().get("aaData", []):
-                try:
-                    ticker = row[0].strip()
-                    close  = float(row[2].replace(",", ""))
-                    diff   = float(row[3].replace(",", ""))
-                    prev   = close - diff
-                    if prev > 0:
-                        result[ticker] = round(diff / prev * 100, 2)
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
-    return result
+        return {}
 
 
 # ── 頁面設定 ──────────────────────────────────────
@@ -444,9 +418,6 @@ if "premium" in mkt:
     )
 else:
     c3.metric("折溢價", "－")
-
-# ── 台股漲幅（Tab2/Tab3 共用，00988A 不適用）────────
-price_map = get_tw_price_map() if fund_id != "00988A" else None
 
 # ── Tab 佈局 ──────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(["📊 當日異動", "🏆 前十大持股", "📋 完整持倉", "📈 歷史紀錄"])
@@ -521,6 +492,7 @@ with tab2:
             st.caption(f"（holdings 最近資料為 {snap_date2}）")
 
         df_all = get_holdings_snapshot(fund_id, snap_date2)
+        price_map = get_tw_price_map(tuple(df_all["代號"].tolist())) if fund_id != "00988A" else None
         df_top10 = df_all.head(10).reset_index(drop=True)
         top10_weight = df_top10["權重"].sum()
         total_weight = df_all["權重"].sum()
@@ -552,6 +524,7 @@ with tab3:
             st.caption(f"（holdings 最近資料為 {snap_date}）")
 
         df_snap = get_holdings_snapshot(fund_id, snap_date)
+        price_map = get_tw_price_map(tuple(df_snap["代號"].tolist())) if fund_id != "00988A" else None
 
         col_s1, col_s2 = st.columns(2)
         col_s1.metric("持股總數", f"{len(df_snap)} 檔")
