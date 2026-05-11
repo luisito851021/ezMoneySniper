@@ -341,7 +341,7 @@ with st.sidebar:
     st.header("🔧 篩選條件")
     fund_id = st.selectbox(
         "選擇基金",
-        options=["00981A", "00988A", "00992A", "00403A"],
+        options=["00981A", "00988A", "00403A", "00992A"],
         format_func=lambda x: f"{x} {FUND_NAMES[x]}",
     )
 
