@@ -270,6 +270,67 @@ def render_history_html(df: pd.DataFrame, fund_id: str) -> str:
 # ezmoney fund code（統一投信旗下，00992A 為群益，另行處理）
 _EZMONEY_CODE = {"00988A": "61YTW", "00981A": "49YTW", "00403A": "63YTW"}
 
+_UNIFIED_TICKERS       = {"00988A", "00981A", "00403A"}
+_EZMONEY_ESTIMATE_PAGE = "https://www.ezmoney.com.tw/ETF/Transaction/Estimate?agree=y"
+_EZMONEY_ESTIMATE_API  = "https://www.ezmoney.com.tw/ETF/Transaction/GetInTimeEstimation"
+
+
+@st.cache_data(ttl=60)
+def _fetch_ezmoney_estimate() -> dict:
+    """ezmoney 即時預估淨值 API，回傳 {ticker: dict}，cache 60 秒"""
+    import urllib3
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    headers = {
+        "User-Agent":       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept":           "application/json, text/javascript, */*; q=0.01",
+        "Referer":          _EZMONEY_ESTIMATE_PAGE,
+        "Origin":           "https://www.ezmoney.com.tw",
+    }
+
+    def _f(v):
+        if v is None:
+            return None
+        try:
+            return float(str(v).replace(",", "").replace("%", "").strip())
+        except (ValueError, TypeError):
+            return None
+
+    def _parse_dt(val):
+        m = re.search(r"/Date\((\d+)\)/", str(val))
+        if not m:
+            return ""
+        ts = int(m.group(1)) / 1000
+        return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(
+            ZoneInfo("Asia/Taipei")
+        ).strftime("%m/%d %H:%M")
+
+    try:
+        sess = requests.Session()
+        sess.headers.update(headers)
+        sess.get(_EZMONEY_ESTIMATE_PAGE, timeout=15, verify=False)
+        resp = sess.post(_EZMONEY_ESTIMATE_API, json={}, timeout=15, verify=False)
+        resp.raise_for_status()
+        raw  = resp.json()
+        items = raw.get("inTimeEstimation", []) if isinstance(raw, dict) else raw
+        result = {}
+        for item in items:
+            ticker = str(item.get("StockNo", "")).strip()
+            if ticker not in _UNIFIED_TICKERS:
+                continue
+            result[ticker] = {
+                "nav_est":     _f(item.get("PerUnitInTime")),
+                "price":       _f(item.get("ClosePriceInTime")),
+                "premium_pct": _f(item.get("DiscountRate")),
+                "data_time":   _parse_dt(item.get("EditTime", "")),
+            }
+        return result
+    except Exception:
+        return {}
+
 @st.cache_data(ttl=1800)
 def get_etf_market_data(fund_id: str, date_str: str) -> dict:
     """
@@ -453,25 +514,42 @@ with st.sidebar:
     st.divider()
     st.caption("資料來源：Supabase" if IS_CLOUD else f"資料庫：{os.getenv('SQLITE_PATH', r'C:\ActiveFundRadar\etf.db')}")
 
-# ── 收盤價 / 淨值 / 折溢價（永遠顯示最新行情，不跟 selected_date）────────
-mkt = get_etf_market_data(fund_id, datetime.now().strftime("%Y-%m-%d"))
+# ── 市價 / 淨值 / 折溢價（永遠顯示最新行情，不跟 selected_date）────────
 c1, c2, c3 = st.columns(3)
-c1.metric("收盤價", f"NT$ {mkt['price']:.2f}" if "price" in mkt else "－")
-if "nav" in mkt:
-    nav_label = f"淨值 (NAV)　{mkt.get('nav_date', '')}"
-    c2.metric(nav_label, f"NT$ {mkt['nav']:.2f}")
+if fund_id in _UNIFIED_TICKERS:
+    est      = _fetch_ezmoney_estimate().get(fund_id, {})
+    price    = est.get("price")
+    nav_est  = est.get("nav_est")
+    prem_pct = est.get("premium_pct")
+    dt_label = est.get("data_time", "")
+    c1.metric("即時市價", f"NT$ {price:.2f}" if price is not None else "－")
+    c2.metric(f"預估淨值　{dt_label}", f"NT$ {nav_est:.2f}" if nav_est is not None else "－")
+    if prem_pct is not None:
+        c3.metric(
+            "折溢價",
+            f"{prem_pct:+.2f}%",
+            delta="溢價" if prem_pct > 0 else ("折價" if prem_pct < 0 else "平價"),
+            delta_color="normal" if prem_pct > 0 else ("inverse" if prem_pct < 0 else "off"),
+        )
+    else:
+        c3.metric("折溢價", "－")
 else:
-    c2.metric("淨值 (NAV)", "－")
-if "premium" in mkt:
-    prem = mkt["premium"]
-    c3.metric(
-        "折溢價",
-        f"{prem:+.2f}%",
-        delta="溢價" if prem > 0 else ("折價" if prem < 0 else "平價"),
-        delta_color="normal" if prem > 0 else ("inverse" if prem < 0 else "off"),
-    )
-else:
-    c3.metric("折溢價", "－")
+    mkt = get_etf_market_data(fund_id, datetime.now().strftime("%Y-%m-%d"))
+    c1.metric("收盤價", f"NT$ {mkt['price']:.2f}" if "price" in mkt else "－")
+    if "nav" in mkt:
+        c2.metric(f"淨值 (NAV)　{mkt.get('nav_date', '')}", f"NT$ {mkt['nav']:.2f}")
+    else:
+        c2.metric("淨值 (NAV)", "－")
+    if "premium" in mkt:
+        prem = mkt["premium"]
+        c3.metric(
+            "折溢價",
+            f"{prem:+.2f}%",
+            delta="溢價" if prem > 0 else ("折價" if prem < 0 else "平價"),
+            delta_color="normal" if prem > 0 else ("inverse" if prem < 0 else "off"),
+        )
+    else:
+        c3.metric("折溢價", "－")
 
 # ── Tab 佈局 ──────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(["📊 當日異動", "🏆 前十大持股", "📋 完整持倉", "📈 歷史紀錄"])
