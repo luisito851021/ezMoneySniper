@@ -29,6 +29,8 @@ FUND_NAMES = {
     "00981A": "統一台股增長",
     "00992A": "群益台灣科技創新",
     "00403A": "統一台股升級50",
+    "00990A": "元大全球AI",
+    "00991A": "復華未來50",
 }
 
 ACTION_COLOR = {
@@ -175,11 +177,11 @@ TABLE_STYLE = """
 """
 
 def render_changes_html(display: pd.DataFrame, delta_raw: pd.Series, fund_id: str) -> str:
-    is_tw = fund_id in ("00981A", "00992A", "00403A")
+    is_tw = fund_id in ("00981A", "00992A", "00403A", "00991A")
     unit = "張" if is_tw else "股"
     rows = ""
     for i, row in display.iterrows():
-        flag = get_flag(row["代號"]) if fund_id == "00988A" else ""
+        flag = get_flag(row["代號"]) if fund_id in ("00988A", "00990A") else ""
         flag_str = f"{flag} " if flag else ""
         d = delta_raw.iloc[i]
         cls = "pos" if d > 0 else ("neg" if d < 0 else "")
@@ -211,7 +213,7 @@ def render_snapshot_html(df: pd.DataFrame, fund_id: str, price_map=None) -> str:
     show_pct = price_map is not None
     rows = ""
     for _, row in df.iterrows():
-        flag = get_flag(row["代號"]) if fund_id == "00988A" else ""
+        flag = get_flag(row["代號"]) if fund_id in ("00988A", "00990A") else ""
         flag_str = f"{flag} " if flag else ""
         pct_cell = ""
         if show_pct:
@@ -241,7 +243,7 @@ def render_snapshot_html(df: pd.DataFrame, fund_id: str, price_map=None) -> str:
 def render_history_html(df: pd.DataFrame, fund_id: str) -> str:
     rows = ""
     for _, row in df.iterrows():
-        flag = get_flag(row["代號"]) if fund_id == "00988A" else ""
+        flag = get_flag(row["代號"]) if fund_id in ("00988A", "00990A") else ""
         flag_str = f"{flag} " if flag else ""
         d = row["權重變化"]
         cls = "pos" if d > 0 else ("neg" if d < 0 else "")
@@ -501,7 +503,7 @@ with st.sidebar:
     st.header("🔧 篩選條件")
     fund_id = st.selectbox(
         "選擇基金",
-        options=["00981A", "00988A", "00403A", "00992A"],
+        options=["00981A", "00988A", "00403A", "00992A", "00990A", "00991A"],
         format_func=lambda x: f"{x} {FUND_NAMES[x]}",
     )
 
@@ -625,7 +627,7 @@ with tab2:
 
         df_all = get_holdings_snapshot(fund_id, snap_date2)
         df_top10 = df_all.head(10).reset_index(drop=True)
-        if fund_id == "00988A":
+        if fund_id in ("00988A", "00990A"):
             price_map = get_yf_price_map(tuple(df_top10["代號"].tolist()))
         else:
             price_map = get_tw_price_map(tuple(df_all["代號"].tolist()))
@@ -659,7 +661,7 @@ with tab3:
             st.caption(f"（holdings 最近資料為 {snap_date}）")
 
         df_snap = get_holdings_snapshot(fund_id, snap_date)
-        if fund_id == "00988A":
+        if fund_id in ("00988A", "00990A"):
             price_map = get_yf_price_map(tuple(df_snap["代號"].tolist()))
         else:
             price_map = get_tw_price_map(tuple(df_snap["代號"].tolist()))
